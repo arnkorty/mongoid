@@ -2,6 +2,7 @@
 module Mongoid
   module Contextual
     module Command
+      extend Gem::Deprecate
 
       # @attribute [r] collection The collection to query against.
       # @attribute [r] criteria The criteria for the context.
@@ -19,43 +20,19 @@ module Mongoid
         @command ||= {}
       end
 
-      # Get the database session.
+      # Get the database client.
       #
-      # @example Get the session.
-      #   command.session
+      # @example Get the client.
+      #   command.client
       #
-      # @return [ Session ] The Moped session.
+      # @return [ Mongo::Client ] The Mongo client.
       #
       # @since 3.0.0
-      def session
-        collection.database.session
+      def client
+        collection.database.client
       end
-
-      private
-
-      # Execute the block setting field limitations.
-      #
-      # @api private
-      #
-      # @example Execute with field limitations.
-      #   text_search.selecting do
-      #     #...
-      #   end
-      #
-      # @param [ Symbol ] param The name of the command parameter.
-      #
-      # @return [ Object ] The result of the yield.
-      #
-      # @since 4.0.0
-      def selecting(param)
-        begin
-          fields = command[param]
-          Threaded.set_selection(criteria.object_id, fields) unless fields.blank?
-          yield
-        ensure
-          Threaded.delete_selection(criteria.object_id)
-        end
-      end
+      alias :session :client
+      deprecate :session, :client, 2015, 12
     end
   end
 end

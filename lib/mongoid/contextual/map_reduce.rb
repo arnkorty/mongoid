@@ -268,7 +268,9 @@ module Mongoid
       # @since 3.0.0
       def documents
         return results["results"] if results.has_key?("results")
-        session[output_collection].find
+        view = client[output_collection].find
+        view.no_cursor_timeout if criteria.options[:timeout] == false
+        view
       end
 
       # Get the collection that the map/reduce results were stored in.
@@ -297,26 +299,27 @@ module Mongoid
       # @since 3.0.0
       def results
         raise Errors::NoMapReduceOutput.new(command) unless command[:out]
-        @results ||= __session__.command(command)
+        @results ||= __client__.command(command).first
       end
 
-      # Get the session with the proper consistency.
+      # Get the client with the proper consistency.
       #
       # @api private
       #
       # @note We can use eventual if the output is set to inline.
       #
-      # @example Get the session.
-      #   map_reduce.__session__
+      # @example Get the client.
+      #   map_reduce.__client__
       #
-      # @return [ Session ] The session with consistency set.
+      # @return [ Mongo::Client ] The client with consistency set.
       #
       # @since 3.0.15
-      def __session__
+      def __client__
         if command[:out][:inline] != 1
-          session.with(read: :primary)
+          # @todo: close
+          client.with(read: { mode: :primary })
         else
-          session
+          client
         end
       end
     end

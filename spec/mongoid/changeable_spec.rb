@@ -541,25 +541,6 @@ describe Mongoid::Changeable do
       end
     end
 
-    pending "when the attribute has changed from the default value" do
-
-      let(:person) do
-        Person.new
-      end
-
-      before do
-        person.pets = true
-      end
-
-      it "returns the default value" do
-        expect(person.send(:attribute_was, "pets")).to be false
-      end
-
-      it "allows access via (attribute)_was" do
-        expect(person.pets_was).to be false
-      end
-    end
-
     context "when the attribute has not changed from the persisted value" do
 
       let!(:person) do
@@ -568,17 +549,6 @@ describe Mongoid::Changeable do
 
       it "returns the original value" do
         expect(person.send(:attribute_was, "title")).to eq("Grand Poobah")
-      end
-    end
-
-    pending "when the attribute has not changed from the default value" do
-
-      let(:person) do
-        Person.new
-      end
-
-      it "returns the default value" do
-        expect(person.send(:attribute_was, "pets")).to be false
       end
     end
   end
@@ -657,7 +627,7 @@ describe Mongoid::Changeable do
 
         before do
           person.changed_attributes["aliases"] = aliases
-          aliases.should_receive(:clone).never
+          expect(aliases).to receive(:clone).never
           person.aliases_will_change!
         end
 
@@ -691,6 +661,24 @@ describe Mongoid::Changeable do
       it "returns an array of changed field names" do
         expect(person.changed).to include("title")
       end
+
+    end
+
+    context "When the document has changed but changed back to the original" do
+
+      let(:person) do
+        Person.instantiate(title: "Grand Poobah")
+      end
+
+      before do
+        person.title = "Captain Obvious"
+        person.title = nil
+      end
+
+      it "returns an array of changed field names" do
+        expect(person.changed).not_to include("title")
+      end
+
     end
 
     context "when the document has not changed" do
@@ -787,8 +775,8 @@ describe Mongoid::Changeable do
         end
 
         it "returns true" do
-          person.changes.should_not be_empty
-          person.should be_changed
+          expect(person.changes).to_not be_empty
+          expect(person).to be_changed
         end
       end
     end
@@ -820,6 +808,58 @@ describe Mongoid::Changeable do
 
       it "returns true" do
         expect(person).to be_changed
+      end
+    end
+
+    context "when changed? has been called before child elements size change" do
+
+      let(:person) do
+        Person.create
+      end
+
+      let(:address) do
+        person.addresses.create(street: "hobrecht")
+      end
+
+      let!(:location) do
+        address.locations.create(name: "home")
+      end
+
+      before do
+        person.changed?
+      end
+
+      context "when adding via new" do
+
+        before do
+          address.locations.new
+        end
+
+        it "returns true" do
+          expect(person).to be_changed
+        end
+      end
+
+      context "when adding via build" do
+
+        before do
+          address.locations.build
+        end
+
+        it "returns true" do
+          expect(person).to be_changed
+        end
+      end
+
+      context "when adding via create" do
+
+        before do
+          address.locations.create
+        end
+
+        it "returns false" do
+          expect(person).to_not be_changed
+        end
       end
     end
 
@@ -1172,6 +1212,83 @@ describe Mongoid::Changeable do
     end
   end
 
+  describe "#reset_attribute_to_default!" do
+
+    context "when a default is defined" do
+
+      context "when the document is new" do
+
+        let(:person) do
+          Person.new(pets: true)
+        end
+
+        before do
+          person.reset_pets_to_default!
+        end
+
+        it "resets to the default value" do
+          expect(person.pets).to eq(false)
+        end
+      end
+
+      context "when the document is persisted" do
+
+        let(:person) do
+          Person.create(pets: true)
+        end
+
+        before do
+          person.reset_pets_to_default!
+        end
+
+        it "resets to the default value" do
+          expect(person.pets).to eq(false)
+        end
+
+        it "flags the document dirty" do
+          expect(person).to be_pets_changed
+        end
+      end
+    end
+
+    context "when a default is not defined" do
+
+      context "when the document is new" do
+
+        let(:person) do
+          Person.new(title: "test")
+        end
+
+        before do
+          person.reset_title_to_default!
+        end
+
+        it "resets to nil" do
+          expect(person.title).to be_nil
+        end
+      end
+
+      context "when the document is persisted" do
+
+        let(:person) do
+          Person.create(title: "test")
+        end
+
+        before do
+          person.reset_title_to_default!
+        end
+
+        it "resets to nil" do
+          expect(person.title).to be_nil
+        end
+
+        it "flags the document dirty" do
+          expect(person).to be_title_changed
+        end
+      end
+    end
+  end
+
   context "when fields have been defined pre-dirty inclusion" do
 
     let(:document) do
@@ -1454,8 +1571,10 @@ describe Mongoid::Changeable do
       end
 
       after do
-        Acolyte._save_callbacks.reject! do |callback|
+        Acolyte._save_callbacks.select do |callback|
           callback.kind == :after
+        end.each do |callback|
+          Acolyte._save_callbacks.delete(callback)
         end
       end
 
@@ -1478,8 +1597,10 @@ describe Mongoid::Changeable do
       end
 
       after do
-        Acolyte._save_callbacks.reject! do |callback|
+        Acolyte._save_callbacks.select do |callback|
           callback.kind == :after
+        end.each do |callback|
+          Acolyte._save_callbacks.delete(callback)
         end
       end
 

@@ -217,6 +217,7 @@ describe Mongoid::Persistable::Updatable do
       end
 
       before do
+        I18n.enforce_available_locales = false
         ::I18n.locale = :de
         product.update_attribute(:description, "Die Bombe")
       end
@@ -283,7 +284,7 @@ describe Mongoid::Persistable::Updatable do
         it "raises an error" do
           expect {
             person.update_attributes(map: { "bad.key" => "value" })
-          }.to raise_error(Moped::Errors::OperationFailure)
+          }.to raise_error(Mongo::Error::OperationFailure)
         end
       end
 
@@ -319,7 +320,7 @@ describe Mongoid::Persistable::Updatable do
         it "raises an error" do
           expect {
             person.send(method, map: { "bad.key" => "value" })
-          }.to raise_error(Moped::Errors::OperationFailure)
+          }.to raise_error(Mongo::Error::OperationFailure)
         end
       end
 

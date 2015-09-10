@@ -115,7 +115,7 @@ describe Mongoid::Reloadable do
           before do
             Person.collection.find(
               { "_id" => person.id }
-            ).update({ "$set" => { "addresses.0.number" => 3 }})
+            ).update_one({ "$set" => { "addresses.0.number" => 3 }})
           end
 
           let!(:reloaded) do
@@ -143,7 +143,7 @@ describe Mongoid::Reloadable do
 
           before do
             Person.collection.find({ "_id" => person.id }).
-              update({ "$set" => { "name.last_name" => "Vicious" }})
+              update_one({ "$set" => { "name.last_name" => "Vicious" }})
           end
 
           let!(:reloaded) do
@@ -176,7 +176,7 @@ describe Mongoid::Reloadable do
 
         before do
           Person.collection.find({ "_id" => person.id }).
-            update({ "$set" => { "addresses.0.locations.0.name" => "work" }})
+            update_one({ "$set" => { "addresses.0.locations.0.name" => "work" }})
         end
 
         let!(:reloaded) do
@@ -209,7 +209,7 @@ describe Mongoid::Reloadable do
 
       before do
         Person.collection.find({ "_id" => person.id }).
-          update({ "$set" => { "addresses" => [] }})
+          update_one({ "$set" => { "addresses" => [] }})
         person.reload
       end
 
@@ -232,7 +232,7 @@ describe Mongoid::Reloadable do
 
         before do
           Game.collection.find({ "_id" => game.id }).
-            update({ "$set" => { "score" => 75 }})
+            update_one({ "$set" => { "score" => 75 }})
           person.reload
         end
 
@@ -251,7 +251,7 @@ describe Mongoid::Reloadable do
 
           before do
             Person.collection.find({ "_id" => person.id }).
-              update({ "$set" => { "title" => "Mam" }})
+              update_one({ "$set" => { "title" => "Mam" }})
             game.reload
           end
 
@@ -259,6 +259,29 @@ describe Mongoid::Reloadable do
             expect(game.person.title).to eq("Mam")
           end
         end
+      end
+    end
+
+    context "when overriding #id alias" do
+
+      let!(:object) do
+        IdKey.create(key: 'foo')
+      end
+
+      let!(:from_db) do
+        IdKey.find(object._id).tap do |object|
+          object.key = 'bar'
+          object.save
+        end
+      end
+
+      it "reloads the object attributes from the db" do
+        object.reload
+        expect(object.key).to eq('bar')
+      end
+
+      it "reload should return self" do
+        expect(object.reload).to eq(from_db)
       end
     end
   end

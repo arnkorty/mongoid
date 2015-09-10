@@ -42,7 +42,7 @@ describe Mongoid::Copyable do
         end
 
         before do
-          Band.collection.find(_id: band.id).update("$set" => { "id" => 1234 })
+          Band.collection.find(_id: band.id).update_one("$set" => { "id" => 1234 })
         end
 
         let!(:cloned) do
@@ -54,9 +54,43 @@ describe Mongoid::Copyable do
         end
       end
 
+      context "when a document has old renamed fields" do
+
+        let!(:actor) do
+          Actor.create(name: "test")
+        end
+
+        before do
+          Actor.collection.find(_id: actor.id).update_one("$set" => { "this_is_not_a_field" => 1 })
+        end
+
+        let(:cloned) do
+          actor.reload.send(method)
+        end
+
+        it "copies the document without error" do
+          expect(cloned.this_is_not_a_field).to eq(1)
+        end
+      end
+
+      context "when using store_as" do
+
+        context "and dynamic attributes are not set" do
+
+          it "clones" do
+            t = StoreAsDupTest1.new(:name => "hi")
+            t.build_store_as_dup_test2(:name => "there")
+            t.save
+            copy = t.send(method)
+            expect(copy.store_as_dup_test2.name).to eq(t.store_as_dup_test2.name)
+          end
+        end
+      end
+
       context "when cloning a document with multiple languages field" do
 
         before do
+          I18n.enforce_available_locales = false
           I18n.locale = 'pt_BR'
           person.desc = "descrição"
           person.save
@@ -119,7 +153,7 @@ describe Mongoid::Copyable do
 
       context "when the document is new" do
 
-        context "when versions exist" do
+        context "when there are changes" do
 
           let(:copy) do
             person.send(method)
@@ -147,14 +181,6 @@ describe Mongoid::Copyable do
 
           it "has a different id from the original" do
             expect(copy.id).to_not eq(person.id)
-          end
-
-          it "does not copy the versions" do
-            expect(copy[:versions]).to be_nil
-          end
-
-          it "resets the document version" do
-            expect(copy.version).to eq(1)
           end
 
           it "returns a new instance" do
@@ -228,7 +254,7 @@ describe Mongoid::Copyable do
           person.new_record = false
         end
 
-        context "when versions exist" do
+        context "when there are changes" do
 
           let(:copy) do
             person.send(method)
@@ -256,10 +282,6 @@ describe Mongoid::Copyable do
 
           it "has a different id from the original" do
             expect(copy.id).to_not eq(person.id)
-          end
-
-          it "does not copy the versions" do
-            expect(copy[:versions]).to be_nil
           end
 
           it "returns a new instance" do

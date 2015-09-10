@@ -27,7 +27,6 @@ module Mongoid
     include Incrementable
     include Logical
     include Poppable
-    include Positional
     include Pullable
     include Pushable
     include Renamable
@@ -142,7 +141,6 @@ module Mongoid
     #
     # @since 4.0.0
     def prepare_atomic_operation
-      # @todo: Check if the document is persisted here.
       operations = yield({})
       persist_or_delay_atomic_operation(operations)
       self
@@ -166,6 +164,9 @@ module Mongoid
     # @since 4.0.0
     def process_atomic_operations(operations)
       operations.each do |field, value|
+        unless attribute_writable?(field)
+          raise Errors::ReadonlyAttribute.new(field, value)
+        end
         normalized = database_field_name(field)
         yield(normalized, value)
         remove_change(normalized)
@@ -205,8 +206,10 @@ module Mongoid
     #
     # @since 4.0.0
     def persist_atomic_operations(operations)
-      selector = atomic_selector
-      _root.collection.find(selector).update(positionally(selector, operations))
+      if persisted?
+        selector = atomic_selector
+        _root.collection.find(selector).update_one(operations)
+      end
     end
   end
 end

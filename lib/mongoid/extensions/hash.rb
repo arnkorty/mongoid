@@ -24,7 +24,11 @@ module Mongoid
       #
       # @since 3.0.0
       def __mongoize_object_id__
-        update_values(&:__mongoize_object_id__)
+        if id = self['$oid']
+          BSON::ObjectId.from_string(id)
+        else
+          update_values(&:__mongoize_object_id__)
+        end
       end
 
       # Consolidate the key/values in the hash under an atomic $set.
@@ -40,7 +44,7 @@ module Mongoid
         each_pair do |key, value|
           if key =~ /\$/
             value.each_pair do |_key, _value|
-              value[_key] = mongoize_for(key, klass, _key, _value)
+              value[_key] = (key == "$rename") ? _value.to_s : mongoize_for(key, klass, _key, _value)
             end
             (consolidated[key] ||= {}).merge!(value)
           else
@@ -214,4 +218,4 @@ module Mongoid
 end
 
 ::Hash.__send__(:include, Mongoid::Extensions::Hash)
-::Hash.__send__(:extend, Mongoid::Extensions::Hash::ClassMethods)
+::Hash.extend(Mongoid::Extensions::Hash::ClassMethods)

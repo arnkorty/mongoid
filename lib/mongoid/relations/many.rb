@@ -5,6 +5,7 @@ module Mongoid
     # This is the superclass for all many to one and many to many relation
     # proxies.
     class Many < Proxy
+      include ::Enumerable
 
       delegate :avg, :max, :min, :sum, to: :criteria
       delegate :length, :size, to: :target
@@ -41,10 +42,13 @@ module Mongoid
       #
       # @since 2.0.0.beta.1
       def create(attributes = nil, type = nil, &block)
-        return attributes.collect{|attribute| create(attribute,type,&block)} if attributes.class == Array
-        doc = build(attributes, type, &block)
-        base.persisted? ? doc.save : raise_unsaved(doc)
-        doc
+        if attributes.is_a?(::Array)
+          attributes.map { |attrs| create(attrs, type, &block) }
+        else
+          doc = build(attributes, type, &block)
+          base.persisted? ? doc.save : raise_unsaved(doc)
+          doc
+        end
       end
 
       # Creates a new document on the references many relation. This will
@@ -69,10 +73,20 @@ module Mongoid
       #
       # @since 2.0.0.beta.1
       def create!(attributes = nil, type = nil, &block)
+<<<<<<< HEAD
         return attributes.collect{|attribute| create!(attribute,type,&block)} if attributes.class == Array
         doc = build(attributes, type, &block)
         base.persisted? ? doc.save! : raise_unsaved(doc)
         doc
+=======
+        if attributes.is_a?(::Array)
+          attributes.map { |attrs| create!(attrs, type, &block) }
+        else
+          doc = build(attributes, type, &block)
+          base.persisted? ? doc.save! : raise_unsaved(doc)
+          doc
+        end
+>>>>>>> mongoid/master
       end
 
       # Find the first document given the conditions, or creates a new document
@@ -92,6 +106,27 @@ module Mongoid
       # @return [ Document ] An existing document or newly created one.
       def find_or_create_by(attrs = {}, type = nil, &block)
         find_or(:create, attrs, type, &block)
+      end
+
+      # Find the first document given the conditions, or creates a new document
+      # with the conditions that were supplied. This will raise an error if validation fails.
+      #
+      # @example Find or create.
+      #   person.posts.find_or_create_by!(:title => "Testing")
+      #
+      # @overload find_or_create_by!(attributes = nil, type = nil)
+      #   @param [ Hash ] attributes The attributes to search or create with.
+      #   @param [ Class ] type The optional type of document to create.
+      #
+      # @overload find_or_create_by!(attributes = nil, type = nil)
+      #   @param [ Hash ] attributes The attributes to search or create with.
+      #   @param [ Class ] type The optional type of document to create.
+      #
+      # @raise [ Errors::Validations ] If validation failed.
+      #
+      # @return [ Document ] An existing document or newly created one.
+      def find_or_create_by!(attrs = {}, type = nil, &block)
+        find_or(:create!, attrs, type, &block)
       end
 
       # Find the first +Document+ given the conditions, or instantiates a new document

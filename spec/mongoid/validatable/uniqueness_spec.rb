@@ -147,6 +147,35 @@ describe Mongoid::Validatable::UniquenessValidator do
                 Dictionary.reset_callbacks(:validate)
               end
 
+              context "when no attribute is set" do
+
+                context "when no document with no value exists in the database" do
+
+                  let(:dictionary) do
+                    Dictionary.new
+                  end
+
+                  it "returns true" do
+                    expect(dictionary).to be_valid
+                  end
+                end
+
+                context "when a document with no value exists in the database" do
+
+                  before do
+                    Dictionary.create
+                  end
+
+                  let(:dictionary) do
+                    Dictionary.new
+                  end
+
+                  it "returns false" do
+                    expect(dictionary).to_not be_valid
+                  end
+                end
+              end
+
               context "when the attribute is unique" do
 
                 context "when single localization" do
@@ -458,7 +487,7 @@ describe Mongoid::Validatable::UniquenessValidator do
                 end
 
                 it "does not touch the database" do
-                  Dictionary.should_receive(:where).never
+                  expect(Dictionary).to receive(:where).never
                   from_db.valid?
                 end
               end
@@ -470,11 +499,11 @@ describe Mongoid::Validatable::UniquenessValidator do
 
           before do
             Dictionary.validates_uniqueness_of :name
-            Dictionary.default_scope(Dictionary.where(year: 1990))
+            Dictionary.default_scope(->{ Dictionary.where(year: 1990) })
           end
 
           after do
-            Dictionary.send(:strip_default_scope, Dictionary.where(year: 1990))
+            Dictionary.default_scoping = nil
             Dictionary.reset_callbacks(:validate)
           end
 
@@ -1031,6 +1060,13 @@ describe Mongoid::Validatable::UniquenessValidator do
           end
         end
 
+        context "when not allowing nil" do
+
+          it "raises a validation error" do
+            expect { LineItem.create! }.to raise_error Mongoid::Errors::Validations
+          end
+        end
+
         context "when allowing nil" do
 
           before do
@@ -1483,7 +1519,48 @@ describe Mongoid::Validatable::UniquenessValidator do
           end
 
         end
+      end
 
+      context "when conditions is set" do
+
+        before do
+          Band.validates_uniqueness_of :name, conditions: ->{ Band.where(active: true) }
+        end
+
+        after do
+          Band.reset_callbacks(:validate)
+        end
+
+        context "when the attribute is unique" do
+
+          before do
+            Band.create(name: 'Foo', active: false)
+          end
+
+          let(:unique_band) do
+            Band.new(name: 'Foo')
+          end
+
+          it "returns true" do
+            expect(unique_band).to be_valid
+          end
+
+        end
+
+        context "when the attribute is not unique" do
+
+          before do
+            Band.create(name: 'Foo')
+          end
+
+          let(:non_unique_band) do
+            Band.new(name: 'Foo')
+          end
+
+          it "returns false" do
+            expect(non_unique_band).to_not be_valid
+          end
+        end
       end
     end
   end
@@ -2296,18 +2373,19 @@ describe Mongoid::Validatable::UniquenessValidator do
   end
 
   context "when validation works with inheritance" do
-
-    before do
-      Actor.validates_uniqueness_of :name
-      Actor.create!(name: "Johnny Depp")
+    class EuropeanActor < Actor
+      validates_uniqueness_of :name
     end
 
-    after do
-      Actor.reset_callbacks(:validate)
+    class SpanishActor < EuropeanActor
+    end
+
+    before do
+      EuropeanActor.create!(name: "Antonio Banderas")
     end
 
     let!(:subclass_document_with_duplicated_name) do
-      Actress.new(name: "Johnny Depp")
+      SpanishActor.new(name: "Antonio Banderas")
     end
 
     it "should be invalid" do
@@ -2333,7 +2411,7 @@ describe Mongoid::Validatable::UniquenessValidator do
       Person.reset_callbacks(:validate)
     end
 
-    it "transfers the options to the cloned session" do
+    it "transfers the options to the cloned client" do
       expect {
         Person.create!(ssn: "132-11-1111", username: "asdfsdfA")
       }.to raise_error

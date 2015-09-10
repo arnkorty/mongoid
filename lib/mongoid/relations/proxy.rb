@@ -12,16 +12,17 @@ module Mongoid
       # We undefine most methods to get them sent through to the target.
       instance_methods.each do |method|
         undef_method(method) unless
-          method =~ /(^__|^send|^object_id|^respond_to|^tap|extend_proxy|extend_proxies)/
+          method =~ /(^__|^send|^object_id|^respond_to|^tap|^public_send|extend_proxy|extend_proxies)/
       end
 
       include Threaded::Lifecycle
       include Marshalable
 
-      attr_accessor :base, :metadata, :target
+      attr_accessor :base, :__metadata, :target
+      alias :relation_metadata :__metadata
 
       # Backwards compatibility with Mongoid beta releases.
-      delegate :foreign_key, :inverse_foreign_key, to: :metadata
+      delegate :foreign_key, :inverse_foreign_key, to: :__metadata
       delegate :bind_one, :unbind_one, to: :binding
       delegate :collection_name, to: :base
 
@@ -37,7 +38,7 @@ module Mongoid
       #
       # @since 2.0.0.rc.1
       def init(base, target, metadata)
-        @base, @target, @metadata = base, target, metadata
+        @base, @target, @__metadata = base, target, metadata
         yield(self) if block_given?
         extend_proxies(metadata.extension) if metadata.extension?
       end
@@ -56,7 +57,7 @@ module Mongoid
       #
       # @since 3.0.15
       def klass
-        metadata ? metadata.klass : nil
+        __metadata ? __metadata.klass : nil
       end
 
       # Resets the criteria inside the relation proxy. Used by many to many
@@ -84,7 +85,7 @@ module Mongoid
       end
 
       # Tell the next persistance operation to store in a specific collection,
-      # database or session.
+      # database or client.
       #
       # @example Save the current document to a different collection.
       #   model.with(collection: "secondary").save
@@ -92,17 +93,17 @@ module Mongoid
       # @example Save the current document to a different database.
       #   model.with(database: "secondary").save
       #
-      # @example Save the current document to a different session.
-      #   model.with(session: "replica_set").save
+      # @example Save the current document to a different client.
+      #   model.with(client: "replica_set").save
       #
       # @example Save with a combination of options.
-      #   model.with(session: "sharded", database: "secondary").save
+      #   model.with(client: "sharded", database: "secondary").save
       #
       # @param [ Hash ] options The storage options.
       #
       # @option options [ String, Symbol ] :collection The collection name.
       # @option options [ String, Symbol ] :database The database name.
-      # @option options [ String, Symbol ] :session The session name.
+      # @option options [ String, Symbol ] :client The client name.
       #
       # @return [ Document ] The current document.
       #
@@ -137,7 +138,7 @@ module Mongoid
       #
       # @since 2.0.0.rc.4
       def characterize_one(document)
-        document.metadata = metadata unless document.metadata
+        document.__metadata = __metadata unless document.__metadata
       end
 
       # Default behavior of method missing should be to delegate all calls
@@ -159,7 +160,7 @@ module Mongoid
       #
       # @since 2.0.0
       def raise_mixed
-        raise Errors::MixedRelations.new(base.class, metadata.klass)
+        raise Errors::MixedRelations.new(base.class, __metadata.klass)
       end
 
       # When the base is not yet saved and the user calls create or create!
@@ -189,11 +190,12 @@ module Mongoid
       # @since 3.1.0
       def callback_method(callback_name)
         methods = []
-        if metadata[callback_name]
-          if metadata[callback_name].is_a? Array
-            methods.concat(metadata[callback_name])
+        metadata = __metadata[callback_name]
+        if metadata
+          if metadata.is_a?(Array)
+            methods.concat(metadata)
           else
-            methods << metadata[callback_name]
+            methods << metadata
           end
         end
         methods

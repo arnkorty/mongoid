@@ -16,13 +16,13 @@ module Mongoid
       #
       # @param [ Hash ] setters The field/value pairs to set.
       #
-      # @return [ true ] If the operation succeeded.
+      # @return [ Document ] The document.
       #
       # @since 4.0.0
       def set(setters)
         prepare_atomic_operation do |ops|
           process_atomic_operations(setters) do |field, value|
-            send("#{field}=", value)
+            process_attribute(field.to_s, value)
             ops[atomic_attribute_name(field)] = attributes[field]
           end
           { "$set" => ops }

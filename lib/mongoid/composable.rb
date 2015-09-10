@@ -11,6 +11,7 @@ require "mongoid/selectable"
 require "mongoid/scopable"
 require "mongoid/serializable"
 require "mongoid/shardable"
+require "mongoid/stateful"
 require "mongoid/traversable"
 require "mongoid/validatable"
 
@@ -25,17 +26,16 @@ module Mongoid
     # All modules that a +Document+ is composed of are defined in this
     # module, to keep the document class from getting too cluttered.
     included do
-      extend ActiveModel::Translation
       extend Findable
     end
 
-    include ActiveModel::Conversion
+    include ActiveModel::Model
     include ActiveModel::ForbiddenAttributesProtection
-    include ActiveModel::Naming
     include ActiveModel::Serializers::JSON
     include ActiveModel::Serializers::Xml
     include Atomic
     include Changeable
+    include Clients
     include Attributes
     include Evolvable
     include Fields
@@ -48,9 +48,8 @@ module Mongoid
     include Scopable
     include Selectable
     include Serializable
-    include Sessions
     include Shardable
-    include State
+    include Stateful
     include Threaded::Lifecycle
     include Traversable
     include Validatable
@@ -74,13 +73,15 @@ module Mongoid
       Reloadable,
       Scopable,
       Serializable,
-      Sessions,
+      Clients,
       Shardable,
-      State,
+      Stateful,
       Threaded::Lifecycle,
       Traversable,
       Validatable,
-      Equality
+      Equality,
+      ActiveModel::Model,
+      ActiveModel::Validations
     ]
 
     class << self
@@ -96,7 +97,7 @@ module Mongoid
       # @since 2.1.8
       def prohibited_methods
         @prohibited_methods ||= MODULES.flat_map do |mod|
-          mod.instance_methods.map{ |m| m.to_sym }
+          mod.instance_methods.map(&:to_sym)
         end
       end
     end

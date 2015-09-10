@@ -4,7 +4,6 @@ require "mongoid/criteria/inspectable"
 require "mongoid/criteria/marshalable"
 require "mongoid/criteria/modifiable"
 require "mongoid/criteria/scopable"
-require "mongoid/sessions/options"
 
 module Mongoid
 
@@ -23,7 +22,7 @@ module Mongoid
     include Marshalable
     include Modifiable
     include Scopable
-    include Sessions::Options
+    include Clients::Options
 
     # Static array used to check with method missing - we only need to ever
     # instantiate once.
@@ -31,7 +30,7 @@ module Mongoid
     # @since 4.0.0
     CHECK = []
 
-    attr_accessor :embedded, :klass
+    attr_accessor :embedded, :klass, :parent_document, :metadata
 
     # Returns true if the supplied +Enumerable+ or +Criteria+ is equal to the results
     # of this +Criteria+ or the criteria itself.
@@ -293,8 +292,33 @@ module Mongoid
       options.merge!(criteria.options)
       self.documents = criteria.documents.dup unless criteria.documents.empty?
       self.scoping_options = criteria.scoping_options
-      self.inclusions = (inclusions + criteria.inclusions.dup).uniq
+      self.inclusions = (inclusions + criteria.inclusions).uniq
       self
+    end
+
+    # Returns a criteria that will always contain zero results and never hits
+    # the database.
+    #
+    # @example Return a none criteria.
+    #   criteria.none
+    #
+    # @return [ Criteria ] The none criteria.
+    #
+    # @since 4.0.0
+    def none
+      @none = true and self
+    end
+
+    # Is the criteria an empty but chainable criteria?
+    #
+    # @example Is the criteria a none criteria?
+    #   criteria.empty_and_chainable?
+    #
+    # @return [ true, false ] If the criteria is a none.
+    #
+    # @since 4.0.0
+    def empty_and_chainable?
+      !!@none
     end
 
     # Overriden to include _type in the fields.
@@ -310,11 +334,45 @@ module Mongoid
     def only(*args)
       return clone if args.flatten.empty?
       args = args.flatten
+      if (args & Fields::IDS).empty?
+        args.unshift(:_id)
+      end
       if klass.hereditary?
         super(*args.push(:_type))
       else
         super(*args)
       end
+    end
+
+    # Set the read preference for the criteria.
+    #
+    # @example Set the read preference.
+    #   criteria.read(mode: :primary_preferred)
+    #
+    # @param [ Hash ] value The mode preference.
+    #
+    # @return [ Criteria ] The cloned criteria.
+    #
+    # @since 5.0.0
+    def read(value = nil)
+      clone.tap do |criteria|
+        criteria.options.merge!(read: value)
+      end
+    end
+
+    # Overriden to exclude _id from the fields.
+    #
+    # @example Exclude fields returned from the database.
+    #   Band.without(:name)
+    #
+    # @param [ Array<Symbol> ] args The names of the fields.
+    #
+    # @return [ Criteria ] The cloned criteria.
+    #
+    # @since 4.0.3
+    def without(*args)
+      args -= Fields::IDS
+      super(*args)
     end
 
     # Returns true if criteria responds to the given method.

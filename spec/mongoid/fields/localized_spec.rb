@@ -81,6 +81,7 @@ describe Mongoid::Fields::Localized do
       context "when a locale is provided" do
 
         before do
+          I18n.enforce_available_locales = false
           ::I18n.locale = :de
         end
 
@@ -175,6 +176,21 @@ describe Mongoid::Fields::Localized do
             end
           end
         end
+      end
+    end
+
+    context "when no type is provided" do
+
+      let(:field) do
+        described_class.new(:description, localize: true)
+      end
+
+      let(:value) do
+        field.demongoize({ "en" => false })
+      end
+
+      it "allows booleans to be returned" do
+        expect(value).to eq(false)
       end
     end
 

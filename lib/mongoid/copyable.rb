@@ -6,7 +6,7 @@ module Mongoid
     extend ActiveSupport::Concern
 
     # Clone or dup the current +Document+. This will return all attributes with
-    # the exception of the document's id and versions, and will reset all the
+    # the exception of the document's id, and will reset all the
     # instance variables.
     #
     # This clone also includes embedded documents.
@@ -22,7 +22,12 @@ module Mongoid
       # _id and id field in the document would cause problems with Mongoid
       # elsewhere.
       attrs = clone_document.except("_id", "id")
-      self.class.new(attrs)
+      begin
+        self.class.new(attrs)
+      rescue Errors::UnknownAttribute
+        self.class.send(:include, Attributes::Dynamic)
+        self.class.new(attrs)
+      end
     end
     alias :dup :clone
 
@@ -40,7 +45,6 @@ module Mongoid
     # @since 3.0.22
     def clone_document
       attrs = as_document.__deep_copy__
-      attrs["version"] = 1 if attrs.delete("versions")
       process_localized_attributes(attrs)
       attrs
     end

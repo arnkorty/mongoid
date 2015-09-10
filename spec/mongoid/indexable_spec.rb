@@ -41,13 +41,13 @@ describe Mongoid::Indexable do
       end
     end
 
-    context "when database specific options exist" do
+    context "when database specific options exist", if: non_legacy_server? do
 
       let(:klass) do
         Class.new do
           include Mongoid::Document
           store_in collection: "test_db_remove"
-          index({ test: 1 }, { database: "mia_2" })
+          index({ test: 1 }, { database: "mongoid_optional" })
           index({ name: 1 }, { background: true })
         end
       end
@@ -58,7 +58,7 @@ describe Mongoid::Indexable do
       end
 
       let(:indexes) do
-        klass.with(database: "mia_2").collection.indexes
+        klass.with(database: "mongoid_optional").collection.indexes
       end
 
       it "creates the indexes" do
@@ -84,17 +84,17 @@ describe Mongoid::Indexable do
       end
 
       it "creates the indexes" do
-        expect(klass.collection.indexes[_type: 1]).to_not be_nil
+        expect(klass.collection.indexes.get(_type: 1)).to_not be_nil
       end
     end
 
-    context "when database options are specified" do
+    context "when database options are specified", if: non_legacy_server? do
 
       let(:klass) do
         Class.new do
           include Mongoid::Document
           store_in collection: "test_db_indexes"
-          index({ _type: 1 }, { database: "mia_1" })
+          index({ _type: 1 }, { database: "mongoid_optional" })
         end
       end
 
@@ -102,12 +102,16 @@ describe Mongoid::Indexable do
         klass.create_indexes
       end
 
+      after do
+        klass.remove_indexes
+      end
+
       let(:indexes) do
-        klass.with(database: "mia_1").collection.indexes
+        klass.with(database: "mongoid_optional").collection.indexes
       end
 
       it "creates the indexes" do
-        expect(indexes[_type: 1]).to_not be_nil
+        expect(indexes.get(_type: 1)).to_not be_nil
       end
     end
   end

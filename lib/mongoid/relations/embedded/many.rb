@@ -79,11 +79,12 @@ module Mongoid
         #
         # @return [ Document ] The new document.
         def build(attributes = {}, type = nil)
-          doc = Factory.build(type || metadata.klass, attributes)
+          doc = Factory.build(type || __metadata.klass, attributes)
           append(doc)
           doc.apply_post_processed_defaults
           yield(doc) if block_given?
           doc.run_callbacks(:build) { doc }
+          base._reset_memoized_children!
           doc
         end
         alias :new :build
@@ -161,7 +162,7 @@ module Mongoid
         #
         # @example Delete the matching documents.
         #   person.addresses.delete_if do |doc|
-        #     doc.state = "GA"
+        #     doc.state == "GA"
         #   end
         #
         # @return [ Many, Enumerator ] The relation or an enumerator if no
@@ -170,7 +171,8 @@ module Mongoid
         # @since 3.1.0
         def delete_if
           if block_given?
-            target.each do |doc|
+            dup_target = target.dup
+            dup_target.each do |doc|
               delete(doc) if yield(doc)
             end
             self
@@ -341,7 +343,7 @@ module Mongoid
         #
         # @since 2.0.0.rc.1
         def binding
-          Bindings::Embedded::Many.new(base, target, metadata)
+          Bindings::Embedded::Many.new(base, target, __metadata)
         end
 
         # Returns the criteria object for the target class with its documents set
@@ -355,7 +357,9 @@ module Mongoid
           criterion = klass.scoped
           criterion.embedded = true
           criterion.documents = target
-          Many.apply_ordering(criterion, metadata)
+          criterion.parent_document = base
+          criterion.metadata = relation_metadata
+          Many.apply_ordering(criterion, __metadata)
         end
 
         # Deletes one document from the target and unscoped.
@@ -401,7 +405,7 @@ module Mongoid
         def method_missing(name, *args, &block)
           return super if target.respond_to?(name)
           klass.send(:with_scope, criteria) do
-            criteria.send(name, *args, &block)
+            criteria.public_send(name, *args, &block)
           end
         end
 
@@ -443,8 +447,8 @@ module Mongoid
         #
         # @since 2.4.0
         def scope(docs)
-          return docs unless metadata.order || metadata.klass.default_scoping?
-          crit = metadata.klass.order_by(metadata.order)
+          return docs unless __metadata.order || __metadata.klass.default_scoping?
+          crit = __metadata.klass.order_by(__metadata.order)
           crit.embedded = true
           crit.documents = docs
           crit.entries

@@ -1,4 +1,5 @@
 # encoding: utf-8
+
 module Mongoid
 
   # This module contains behaviour for all Mongoid scoping - named scopes,
@@ -30,7 +31,7 @@ module Mongoid
     def apply_default_scoping
       if default_scoping
         default_scoping.call.selector.each do |field, value|
-          attributes[field] = value unless value.respond_to?(:each_pair)
+          attributes[field] = value unless value.respond_to?(:each)
         end
       end
     end
@@ -45,7 +46,7 @@ module Mongoid
       #     include Mongoid::Document
       #     field :active, type: Boolean
       #
-      #     scope :active, where(active: true)
+      #     scope :active, -> { where(active: true) }
       #   end
       #   Band.scopes
       #
@@ -114,7 +115,7 @@ module Mongoid
       #
       # @since 3.0.0
       def queryable
-        scope_stack.last || Criteria.new(self)
+        Threaded.current_scope || Criteria.new(self)
       end
 
       # Create a scope that can be accessed from the class level or chained to
@@ -127,14 +128,14 @@ module Mongoid
       #     field :active, type: Boolean
       #     field :count, type: Integer
       #
-      #     scope :active, where(active: true)
+      #     scope :active, -> { where(active: true) }
       #     scope :at_least, ->(count){ where(:count.gt => count) }
       #   end
       #
       # @param [ Symbol ] name The name of the scope.
-      # @param [ Proc, Criteria ] conditions The conditions of the scope.
+      # @param [ Proc ] conditions The conditions of the scope.
       #
-      # @raise [ Errors::InvalidScope ] If the scope is not a proc or criteria.
+      # @raise [ Errors::InvalidScope ] If the scope is not a proc.
       # @raise [ Errors::ScopeOverwrite ] If the scope name already exists.
       #
       # @since 1.0.0
@@ -143,22 +144,10 @@ module Mongoid
         check_scope_validity(value)
         check_scope_name(normalized)
         _declared_scopes[normalized] = {
-          scope: strip_default_scope(value),
+          scope: value,
           extension: Module.new(&block)
         }
         define_scope_method(normalized)
-      end
-
-      # Initializes and returns the current scope stack.
-      #
-      # @example Get the scope stack.
-      #   Person.scope_stack
-      #
-      # @return [ Array<Criteria> ] The scope stack.
-      #
-      # @since 1.0.0
-      def scope_stack
-        Threaded.scope_stack[object_id] ||= []
       end
 
       # Get a criteria for the document with normal scoping.
@@ -233,11 +222,11 @@ module Mongoid
       #
       # @since 1.0.0
       def with_scope(criteria)
-        scope_stack.push(criteria)
+        Threaded.current_scope = criteria
         begin
           yield criteria
         ensure
-          scope_stack.pop
+          Threaded.current_scope = nil
         end
       end
 
@@ -302,7 +291,7 @@ module Mongoid
       #
       # @since 3.0.0
       def check_scope_validity(value)
-        unless value.respond_to?(:to_proc)
+        unless value.respond_to?(:call)
           raise Errors::InvalidScope.new(self, value)
         end
       end
@@ -321,15 +310,16 @@ module Mongoid
       #
       # @since 3.0.0
       def define_scope_method(name)
-        singleton_class.class_eval <<-SCOPE, __FILE__, __LINE__ + 1
-          def #{name}(*args)
-            scoping = _declared_scopes[:#{name}]
-            scope, extension = scoping[:scope][*args], scoping[:extension]
+        singleton_class.class_eval do
+          define_method name do |*args|
+            scoping = _declared_scopes[name]
+            scope = instance_exec(*args, &scoping[:scope])
+            extension = scoping[:extension]
             criteria = with_default_scope.merge(scope || queryable)
             criteria.extend(extension)
             criteria
           end
-        SCOPE
+        end
       end
 
       # Process the default scope value. If one already exists, we merge the
@@ -348,30 +338,6 @@ module Mongoid
           ->{ existing.call.merge(value.to_proc.call) }
         else
           value.to_proc
-        end
-      end
-
-      # Strip the default scope from the provided value, if it is a criteria.
-      # This is used by named scopes - they should not have the default scoping
-      # applied to them.
-      #
-      # @api private
-      #
-      # @example Strip the default scope.
-      #   Model.strip_default_scope
-      #
-      # @param [ Proc, Criteria ] value The value to strip from.
-      #
-      # @return [ Proc ] The stripped criteria, as a proc.
-      #
-      # @since 3.0.0
-      def strip_default_scope(value)
-        if value.is_a?(Criteria)
-          default = default_scoping.try(:call)
-          value.remove_scoping(default)
-          value.to_proc
-        else
-          value
         end
       end
     end

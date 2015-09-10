@@ -16,7 +16,7 @@ module Mongoid
     #
     # @since 2.4.0
     def changed
-      changed_attributes.keys
+      changed_attributes.keys.select { |attr| attribute_change(attr) }
     end
 
     # Has the document changed?
@@ -40,9 +40,7 @@ module Mongoid
     #
     # @since 2.4.1
     def children_changed?
-      _children.any? do |child|
-        child.changed?
-      end
+      _children.any?(&:changed?)
     end
 
     # Get the attribute changes.
@@ -184,7 +182,7 @@ module Mongoid
     # @since 2.1.6
     def attribute_changed?(attr)
       attr = database_field_name(attr)
-      return false unless changed_attributes.has_key?(attr)
+      return false unless changed_attributes.key?(attr)
       changed_attributes[attr] != attributes[attr]
     end
 
@@ -228,7 +226,7 @@ module Mongoid
     #
     # @since 2.3.0
     def attribute_will_change!(attr)
-      unless changed_attributes.has_key?(attr)
+      unless changed_attributes.key?(attr)
         changed_attributes[attr] = read_attribute(attr).__deep_copy__
       end
     end
@@ -246,6 +244,15 @@ module Mongoid
     def reset_attribute!(attr)
       attr = database_field_name(attr)
       attributes[attr] = changed_attributes.delete(attr) if attribute_changed?(attr)
+    end
+
+    def reset_attribute_to_default!(attr)
+      attr = database_field_name(attr)
+      if field = fields[attr]
+        __send__("#{attr}=", field.eval_default(self))
+      else
+        __send__("#{attr}=", nil)
+      end
     end
 
     module ClassMethods
@@ -270,6 +277,7 @@ module Mongoid
         create_dirty_default_change_check(name, meth)
         create_dirty_previous_value_accessor(name, meth)
         create_dirty_reset(name, meth)
+        create_dirty_reset_to_default(name, meth)
       end
 
       # Creates the dirty change accessor.
@@ -370,6 +378,23 @@ module Mongoid
         generated_methods.module_eval do
           re_define_method("reset_#{meth}!") do
             reset_attribute!(name)
+          end
+        end
+      end
+
+      # Creates the dirty change reset to default.
+      #
+      # @example Create the reset.
+      #   Model.create_dirty_reset_to_default("name", "alias")
+      #
+      # @param [ String ] name The attribute name.
+      # @param [ String ] meth The name of the accessor.
+      #
+      # @since 3.0.0
+      def create_dirty_reset_to_default(name, meth)
+        generated_methods.module_eval do
+          re_define_method("reset_#{meth}_to_default!") do
+            reset_attribute_to_default!(name)
           end
         end
       end

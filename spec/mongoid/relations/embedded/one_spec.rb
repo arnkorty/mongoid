@@ -174,11 +174,11 @@ describe Mongoid::Relations::Embedded::One do
             end
 
             let(:pet_one) do
-              Pet.new
+              Pet.new(name: 'kika')
             end
 
             let(:pet_two) do
-              Pet.new
+              Pet.new(name: 'tiksy')
             end
 
             before do
@@ -188,6 +188,14 @@ describe Mongoid::Relations::Embedded::One do
 
             it "runs the destroy callbacks on the old document" do
               expect(pet_one.destroy_flag).to be true
+            end
+
+            it "keeps the name of the destroyed" do
+              expect(pet_one.name).to eq("kika")
+            end
+
+            it "saves the new name" do
+              expect(pet_owner.pet.name).to eq("tiksy")
             end
           end
         end
@@ -939,7 +947,7 @@ describe Mongoid::Relations::Embedded::One do
     context "when a parent was removed outside of mongoid" do
 
       before do
-        person.collection.where(_id: person.id).update(
+        person.collection.find(_id: person.id).update_one(
           "$pull" => { "addresses" => { _id: address_one.id }}
         )
       end
@@ -955,7 +963,7 @@ describe Mongoid::Relations::Embedded::One do
         end
 
         before do
-          address_two.code = code
+          person.reload.addresses.first.code = code
         end
 
         it "reloads the correct number" do
@@ -974,7 +982,7 @@ describe Mongoid::Relations::Embedded::One do
     before do
       band.collection.
         find(_id: band.id).
-        update("$set" => { label: { name: "Mute" }})
+        update_one("$set" => { label: { name: "Mute" }})
     end
 
     context "when loading the documents" do

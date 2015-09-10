@@ -11,20 +11,20 @@ if ENV["CI"]
   end
 end
 
+require "action_controller"
 require "mongoid"
 require "rspec"
-require "helpers"
 
 # These environment variables can be set if wanting to test against a database
 # that is not on the local machine.
-ENV["MONGOID_SPEC_HOST"] ||= "localhost"
+ENV["MONGOID_SPEC_HOST"] ||= "127.0.0.1"
 ENV["MONGOID_SPEC_PORT"] ||= "27017"
 
 # These are used when creating any connection in the test suite.
 HOST = ENV["MONGOID_SPEC_HOST"]
 PORT = ENV["MONGOID_SPEC_PORT"].to_i
 
-# Moped.logger.level = Logger::DEBUG
+Mongo::Logger.logger.level = Logger::INFO
 # Mongoid.logger.level = Logger::DEBUG
 
 # When testing locally we use the database named mongoid_test. However when
@@ -39,26 +39,43 @@ def database_id_alt
   "mongoid_test_alt"
 end
 
+require 'support/authorization'
+require 'support/expectations'
+
+# Give MongoDB time to start up on the travis ci environment.
+if (ENV['CI'] == 'travis')
+  starting = true
+  client = Mongo::Client.new(['127.0.0.1:27017'])
+  while starting
+    begin
+      client.command(Mongo::Server::Monitor::STATUS)
+      break
+    rescue Mongo::Error::OperationFailure => e
+      sleep(2)
+      client.cluster.scan!
+    end
+  end
+end
+
 CONFIG = {
-  sessions: {
+  clients: {
     default: {
       database: database_id,
-      hosts: [ "#{HOST}:#{PORT}" ]
+      hosts: [ "#{HOST}:#{PORT}" ],
+      options: {
+        server_selection_timeout: 0.5,
+        max_pool_size: 1,
+        heartbeat_frequency: 180,
+        user: MONGOID_ROOT_USER.name,
+        password: MONGOID_ROOT_USER.password,
+        auth_source: Mongo::Database::ADMIN
+      }
     }
   }
 }
 
-# Can we connect to MongoHQ from this box?
-def mongohq_connectable?
-  ENV["MONGOHQ_REPL_PASS"].present?
-end
-
-def purge_database_alt!
-  session = Mongoid::Sessions.default
-  session.use(database_id_alt)
-  session.collections.each do |collection|
-    collection.drop
-  end
+def non_legacy_server?
+  Mongoid::Clients.default.cluster.servers.first.features.write_command_enabled?
 end
 
 # Set the database that the spec suite connects to.
@@ -87,16 +104,25 @@ ActiveSupport::Inflector.inflections do |inflect|
   inflect.singular("address_components", "address_component")
 end
 
+I18n.config.enforce_available_locales = false
+
 RSpec.configure do |config|
-  config.include Mongoid::SpecHelpers
+  config.raise_errors_for_deprecations!
+  config.include(Mongoid::Expectations)
+
+  config.before(:suite) do
+    client = Mongo::Client.new(["#{HOST}:#{PORT}"])
+    begin
+      # Create the root user administrator as the first user to be added to the
+      # database. This user will need to be authenticated in order to add any
+      # more users to any other databases.
+      client.database.users.create(MONGOID_ROOT_USER)
+    rescue Exception => e
+    end
+  end
 
   # Drop all collections and clear the identity map before each spec.
   config.before(:each) do
     Mongoid.purge!
   end
-
-  # Filter out MongoHQ specs if we can't connect to it.
-  config.filter_run_excluding(config: ->(value){
-    return true if value == :mongohq && !mongohq_connectable?
-  })
 end

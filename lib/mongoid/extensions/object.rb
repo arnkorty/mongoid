@@ -104,19 +104,20 @@ module Mongoid
         send(name, *args) if name && respond_to?(name)
       end
 
-      # Get the value for an instance variable or nil if it doesn't exist.
+      # Get the value for an instance variable or false if it doesn't exist.
       #
       # @example Get the value for an instance var.
       #   document.ivar("person")
       #
       # @param [ String ] name The name of the variable.
       #
-      # @return [ Object, nil ] The value or nil.
+      # @return [ Object, false ] The value or false.
       #
       # @since 2.0.0.rc.1
       def ivar(name)
-        if instance_variable_defined?("@_#{name}")
-          return instance_variable_get("@_#{name}")
+        var_name = "@_#{name}"
+        if instance_variable_defined?(var_name)
+          return instance_variable_get(var_name)
         else
           false
         end
@@ -271,4 +272,4 @@ module Mongoid
 end
 
 ::Object.__send__(:include, Mongoid::Extensions::Object)
-::Object.__send__(:extend, Mongoid::Extensions::Object::ClassMethods)
+::Object.extend(Mongoid::Extensions::Object::ClassMethods)

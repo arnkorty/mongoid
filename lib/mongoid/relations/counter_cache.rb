@@ -108,7 +108,7 @@ module Mongoid
               record[cache_column] = (record[cache_column] || 0) + 1
 
               if record.persisted?
-                record.class.increment_counter(cache_column, record.id)
+                record.class.increment_counter(cache_column, record._id)
                 record.remove_change(cache_column)
               end
             end
@@ -116,10 +116,10 @@ module Mongoid
 
           before_destroy do
             if record = __send__(name)
-              record[cache_column] = (record[cache_column] || 0) - 1
+              record[cache_column] = (record[cache_column] || 0) - 1 unless record.frozen?
 
               if record.persisted?
-                record.class.decrement_counter(cache_column, record.id)
+                record.class.decrement_counter(cache_column, record._id)
                 record.remove_change(cache_column)
               end
             end

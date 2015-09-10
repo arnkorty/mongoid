@@ -56,7 +56,7 @@ describe Mongoid::Relations::AutoSave do
         end
 
         it "does not add the autosave callback twice" do
-          drug.should_receive(:save).once
+          expect(drug).to receive(:save).once
           person.drugs.push(drug)
           person.save
         end
@@ -150,7 +150,7 @@ describe Mongoid::Relations::AutoSave do
           end
         end
 
-        context "when updating the child" do
+        pending "when updating the child" do
 
           before do
             person.account = account

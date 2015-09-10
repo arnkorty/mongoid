@@ -10,6 +10,33 @@ module Mongoid
   module Fields
     extend ActiveSupport::Concern
 
+    # For fields defined with symbols use the correct class.
+    #
+    # @since 4.0.0
+    TYPE_MAPPINGS = {
+      array: Array,
+      big_decimal: BigDecimal,
+      binary: BSON::Binary,
+      boolean: Mongoid::Boolean,
+      date: Date,
+      date_time: DateTime,
+      float: Float,
+      hash: Hash,
+      integer: Integer,
+      object_id: BSON::ObjectId,
+      range: Range,
+      regexp: Regexp,
+      set: Set,
+      string: String,
+      symbol: Symbol,
+      time: Time
+    }.with_indifferent_access
+
+    # Constant for all names of the id field in a document.
+    #
+    # @since 5.0.0
+    IDS = [ :_id, :id, '_id', 'id' ].freeze
+
     included do
       class_attribute :aliased_fields
       class_attribute :localized_fields
@@ -71,7 +98,7 @@ module Mongoid
     #
     # @since 2.4.0
     def apply_default(name)
-      unless attributes.has_key?(name)
+      unless attributes.key?(name)
         if field = fields[name]
           default = field.eval_default(self)
           unless default.nil? || field.lazy?
@@ -336,7 +363,7 @@ module Mongoid
         field_options = field.options
 
         Fields.options.each_pair do |option_name, handler|
-          if field_options.has_key?(option_name)
+          if field_options.key?(option_name)
             handler.call(self, field, field_options[option_name])
           end
         end
@@ -533,9 +560,19 @@ module Mongoid
 
       def field_for(name, options)
         opts = options.merge(klass: self)
+        type_mapping = TYPE_MAPPINGS[options[:type]]
+        opts[:type] = type_mapping || unmapped_type(options)
         return Fields::Localized.new(name, opts) if options[:localize]
         return Fields::ForeignKey.new(name, opts) if options[:identity]
         Fields::Standard.new(name, opts)
+      end
+
+      def unmapped_type(options)
+        if "Boolean" == options[:type].to_s
+          Mongoid::Boolean
+        else
+          options[:type] || Object
+        end
       end
     end
   end

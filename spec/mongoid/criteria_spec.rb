@@ -148,6 +148,21 @@ describe Mongoid::Criteria do
     end
   end
 
+  describe "#read" do
+
+    let(:person) do
+      Person.create
+    end
+
+    let(:criteria) do
+      Person.read(mode: :secondary)
+    end
+
+    it "adds the read option" do
+      expect(criteria.options[:read]).to eq(mode: :secondary)
+    end
+  end
+
   describe "#aggregates" do
 
     context "when provided a single field" do
@@ -362,7 +377,7 @@ describe Mongoid::Criteria do
       end
 
       it "does not hit the database after first iteration" do
-        criteria.context.query.should_receive(:each).never
+        expect(criteria.context.view).to receive(:each).never
         criteria.each do |doc|
           expect(doc).to eq(person)
         end
@@ -380,7 +395,7 @@ describe Mongoid::Criteria do
       end
 
       it "does not hit the database after first iteration" do
-        criteria.context.query.should_receive(:each).never
+        expect(criteria.context.view).to receive(:each).never
         criteria.each do |doc|
           expect(doc).to eq(person)
         end
@@ -709,7 +724,7 @@ describe Mongoid::Criteria do
     end
 
     it "returns the criteria explain path" do
-      expect(criteria.explain["cursor"]).to eq("BasicCursor")
+      expect(criteria.explain).to_not be_empty
     end
   end
 
@@ -752,12 +767,12 @@ describe Mongoid::Criteria do
       Band.only(:name)
     end
 
-    it "returns the fields minus type" do
-      expect(criteria.field_list).to eq([ "name" ])
+    it "returns the fields with required _id minus type" do
+      expect(criteria.field_list).to eq([ "_id", "name" ])
     end
   end
 
-  describe "#find_and_modify" do
+  describe "#find_one_and_update" do
 
     let!(:depeche) do
       Band.create(name: "Depeche Mode")
@@ -778,7 +793,7 @@ describe Mongoid::Criteria do
           end
 
           let(:result) do
-            criteria.find_and_modify({ "$inc" => { likes: 1 }}, new: true)
+            criteria.find_one_and_update({ "$inc" => { likes: 1 }}, return_document: :after)
           end
 
           it "returns the first matching document" do
@@ -793,7 +808,7 @@ describe Mongoid::Criteria do
           end
 
           let!(:result) do
-            criteria.find_and_modify("$inc" => { likes: 1 })
+            criteria.find_one_and_update("$inc" => { likes: 1 })
           end
 
           before do
@@ -813,7 +828,7 @@ describe Mongoid::Criteria do
         end
 
         let!(:result) do
-          criteria.find_and_modify("$inc" => { likes: 1 })
+          criteria.find_one_and_update("$inc" => { likes: 1 })
         end
 
         it "returns the first matching document" do
@@ -832,7 +847,7 @@ describe Mongoid::Criteria do
         end
 
         let!(:result) do
-          criteria.find_and_modify("$inc" => { likes: 1 })
+          criteria.find_one_and_update("$inc" => { likes: 1 })
         end
 
         it "returns the first matching document" do
@@ -851,7 +866,7 @@ describe Mongoid::Criteria do
         end
 
         let!(:result) do
-          criteria.find_and_modify("$inc" => { likes: 1 })
+          criteria.find_one_and_update("$inc" => { likes: 1 })
         end
 
         it "returns the first matching document" do
@@ -874,7 +889,7 @@ describe Mongoid::Criteria do
         end
 
         let!(:result) do
-          criteria.find_and_modify({ "$inc" => { likes: 1 }}, new: true)
+          criteria.find_one_and_update({ "$inc" => { likes: 1 }}, return_document: :after)
         end
 
         it "returns the first matching document" do
@@ -893,7 +908,7 @@ describe Mongoid::Criteria do
         end
 
         let!(:result) do
-          criteria.find_and_modify({}, remove: true)
+          criteria.find_one_and_delete
         end
 
         it "returns the first matching document" do
@@ -915,11 +930,18 @@ describe Mongoid::Criteria do
       end
 
       let(:result) do
-        criteria.find_and_modify("$inc" => { likes: 1 })
+        criteria.find_one_and_update("$inc" => { likes: 1 })
       end
 
-      it "returns nil" do
-        expect(result).to be_nil
+      context "without upsert" do
+
+        let(:result) do
+          criteria.find_one_and_update("$inc" => { likes: 1 })
+        end
+
+        it "returns nil" do
+          expect(result).to be_nil
+        end
       end
     end
   end
@@ -1371,6 +1393,70 @@ describe Mongoid::Criteria do
 
     context "when including a belongs to relation" do
 
+      context "when the criteria is from the root" do
+
+        let!(:person_two) do
+          Person.create(age: 2)
+        end
+
+        let!(:post_one) do
+          person.posts.create(title: "one")
+        end
+
+        let!(:post_two) do
+          person_two.posts.create(title: "two")
+        end
+
+        context "when calling first" do
+
+          let(:criteria) do
+            Post.includes(:person)
+          end
+
+          let!(:document) do
+            criteria.first
+          end
+
+          it "eager loads the first document" do
+            expect_query(0) do
+              expect(document.person).to eq(person)
+            end
+          end
+
+          it "returns the first document" do
+            expect(document).to eq(post_one)
+          end
+        end
+
+        context "when calling last" do
+
+          let!(:criteria) do
+            Post.asc(:_id).includes(:person)
+          end
+
+          let!(:document) do
+            criteria.last
+          end
+
+          it "eager loads the last document" do
+            expect_query(0) do
+              expect(document.person).to eq(person_two)
+            end
+          end
+
+          it "does not eager load the first document" do
+            doc = criteria.first
+            expect_query(1) do
+              expect(doc.person).to eq(person)
+            end
+          end
+
+          it "returns the last document" do
+            expect(document).to eq(post_two)
+          end
+        end
+      end
+
       context "when the criteria is from an embedded relation" do
 
         let(:peep) do
@@ -1495,83 +1581,12 @@ describe Mongoid::Criteria do
           end
         end
       end
-
-      context "when the criteria is from the root" do
-
-        let!(:person_two) do
-          Person.create(age: 2)
-        end
-
-        let!(:post_one) do
-          person.posts.create(title: "one")
-        end
-
-        let!(:post_two) do
-          person_two.posts.create(title: "two")
-        end
-
-        context "when calling first" do
-
-          let(:criteria) do
-            Post.includes(:person)
-          end
-
-          let!(:document) do
-            criteria.first
-          end
-
-          it "eager loads the first document" do
-            expect_query(0) do
-              expect(document.person).to eq(person)
-            end
-          end
-
-          it "does not eager load the last document" do
-            doc = criteria.last
-            expect_query(1) do
-              expect(doc.person).to eq(person_two)
-            end
-          end
-
-          it "returns the first document" do
-            expect(document).to eq(post_one)
-          end
-        end
-
-        context "when calling last" do
-
-          let!(:criteria) do
-            Post.includes(:person)
-          end
-
-          let!(:document) do
-            criteria.last
-          end
-
-          it "eager loads the last document" do
-            expect_query(0) do
-              expect(document.person).to eq(person_two)
-            end
-          end
-
-          it "does not eager load the first document" do
-            doc = criteria.first
-            expect_query(1) do
-              expect(doc.person).to eq(person)
-            end
-          end
-
-          it "returns the last document" do
-            expect(document).to eq(post_two)
-          end
-        end
-      end
     end
 
     context "when providing inclusions to the default scope" do
 
       before do
-        Person.default_scope(Person.includes(:posts))
+        Person.default_scope(->{ Person.includes(:posts) })
       end
 
       after do
@@ -1623,7 +1638,7 @@ describe Mongoid::Criteria do
           end
 
           before do
-            new_context.should_receive(:eager_load_one).with(person).once.and_call_original
+            expect(new_context).to receive(:eager_load_one).with(person).once.and_call_original
           end
 
           let!(:from_db) do
@@ -1674,7 +1689,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.should_receive(:eager_load_one).with(person).once.and_call_original
+          expect(context).to receive(:eager_load_one).with(person).once.and_call_original
         end
 
         let!(:from_db) do
@@ -1934,7 +1949,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.should_receive(:eager_load).with([ person ]).once.and_call_original
+          expect(context).to receive(:eager_load).with([ person ]).once.and_call_original
         end
 
         let!(:documents) do
@@ -1968,7 +1983,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.should_receive(:eager_load).with([ person ]).once.and_call_original
+          expect(context).to receive(:eager_load).with([ person ]).once.and_call_original
         end
 
         let!(:documents) do
@@ -1999,7 +2014,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.should_receive(:eager_load).with([ person ]).once.and_call_original
+          expect(context).to receive(:eager_load).with([ person ]).once.and_call_original
         end
 
         let!(:documents) do
@@ -2037,11 +2052,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.
-            should_receive(:eager_load).
-            with([ game_one, game_two ]).
-            once.
-            and_call_original
+          expect(context).to receive(:eager_load).with([ game_one, game_two ]).once.and_call_original
         end
 
         let!(:documents) do
@@ -2064,7 +2075,7 @@ describe Mongoid::Criteria do
         end
 
         before do
-          context.should_receive(:eager_load).with([ game_one ]).once.and_call_original
+          expect(context).to receive(:eager_load).with([ game_one ]).once.and_call_original
         end
 
         let!(:documents) do
@@ -2104,7 +2115,7 @@ describe Mongoid::Criteria do
       end
 
       before do
-        context.should_receive(:eager_load).with([ person ]).once.and_call_original
+        expect(context).to receive(:eager_load).with([ person ]).once.and_call_original
       end
 
       let!(:documents) do
@@ -2217,15 +2228,18 @@ describe Mongoid::Criteria do
       Band.create(name: "Tool", likes: 100)
     end
 
-    let(:map_reduce) do
-      Band.limit(2).map_reduce(map, reduce).out(inline: 1)
-    end
+    context "when no timeout options are provided" do
 
-    it "returns the map/reduce results" do
-      expect(map_reduce).to eq([
-        { "_id" => "Depeche Mode", "value" => { "likes" => 200 }},
-        { "_id" => "Tool", "value" => { "likes" => 100 }}
-      ])
+      let(:map_reduce) do
+        Band.limit(2).map_reduce(map, reduce).out(inline: 1)
+      end
+
+      it "returns the map/reduce results" do
+        expect(map_reduce).to eq([
+          { "_id" => "Depeche Mode", "value" => { "likes" => 200 }},
+          { "_id" => "Tool", "value" => { "likes" => 100 }}
+        ])
+      end
     end
   end
 
@@ -2601,11 +2615,26 @@ describe Mongoid::Criteria do
         end
 
         it "limits the returned fields" do
-          expect(criteria.first.name).to be_nil
+          expect {
+            criteria.first.name
+          }.to raise_error(ActiveModel::MissingAttributeError)
         end
 
         it "does not add _type to the fields" do
           expect(criteria.options[:fields]["_type"]).to be_nil
+        end
+      end
+
+      context "when not including id" do
+
+        let(:criteria) do
+          Band.only(:name)
+        end
+
+        it "responds to id anyway" do
+          expect {
+            criteria.first.id
+          }.to_not raise_error
         end
       end
 
@@ -2620,7 +2649,9 @@ describe Mongoid::Criteria do
         end
 
         it "excludes the non included fields" do
-          expect(criteria.first.active).to be_nil
+          expect {
+            criteria.first.active
+          }.to raise_error(ActiveModel::MissingAttributeError)
         end
 
         it "does not add _type to the fields" do
@@ -2690,7 +2721,7 @@ describe Mongoid::Criteria do
         end
 
         it "properly uses the database field name" do
-          expect(criteria.options).to eq(fields: { "mobile_phones" => 1 })
+          expect(criteria.options).to eq(fields: { "_id" => 1, "mobile_phones" => 1 })
         end
       end
     end
@@ -2837,6 +2868,17 @@ describe Mongoid::Criteria do
       end
     end
 
+    context "when plucking existent and non-existent fields" do
+
+      let(:plucked) do
+        Band.all.pluck(:id, :fooz)
+      end
+
+      it "returns nil for the field that doesnt exist" do
+        expect(plucked).to eq([[depeche.id, nil], [tool.id, nil], [photek.id, nil] ])
+      end
+    end
+
     context "when plucking a field that doesnt exist" do
 
       context "when pluck one field" do
@@ -2845,8 +2887,8 @@ describe Mongoid::Criteria do
           Band.all.pluck(:foo)
         end
 
-        it "returns a empty array" do
-          expect(plucked).to eq([])
+        it "returns a array with nil values" do
+          expect(plucked).to eq([nil, nil, nil])
         end
       end
 
@@ -2856,8 +2898,8 @@ describe Mongoid::Criteria do
           Band.all.pluck(:foo, :bar)
         end
 
-        it "returns a empty array" do
-          expect(plucked).to eq([[], [], []])
+        it "returns a nil arrays" do
+          expect(plucked).to eq([[nil, nil], [nil, nil], [nil, nil]])
         end
       end
     end
@@ -3017,36 +3059,6 @@ describe Mongoid::Criteria do
     end
   end
 
-  describe "#extras with a hint" do
-
-    let!(:band) do
-      Band.create(name: "Depeche Mode")
-    end
-
-    let(:criteria) do
-      Band.where(name: "Depeche Mode").extras(:hint => {:bad_hint => 1})
-    end
-
-    it "executes the criteria while properly giving the hint to Mongo" do
-      expect { criteria.to_ary }.to raise_error(Moped::Errors::QueryFailure,  %r{failed with error 10113: "bad hint"})
-    end
-  end
-
-  describe "#hint" do
-
-    let!(:band) do
-      Band.create(name: "Depeche Mode")
-    end
-
-    let(:criteria) do
-      Band.where(name: "Depeche Mode").hint(bad_hint: 1)
-    end
-
-    it "executes the criteria while properly giving the hint to Mongo" do
-      expect { criteria.to_ary }.to raise_error(Moped::Errors::QueryFailure,  %r{failed with error 10113: "bad hint"})
-    end
-  end
-
   describe "#max_scan" do
     let!(:band) do
       Band.create(name: "Depeche Mode")
@@ -3062,31 +3074,6 @@ describe Mongoid::Criteria do
 
     it "executes the criteria while properly giving the max scan to Mongo" do
       expect(criteria.to_ary).to eq [band]
-    end
-  end
-
-  describe "#text_search" do
-
-    let(:criteria) do
-      Word.all
-    end
-
-    before do
-      Word.with(database: "admin").mongo_session.command(setParameter: 1, textSearchEnabled: true)
-      Word.create_indexes
-      Word.create!(name: "phase", origin: "latin")
-    end
-
-    after(:all) do
-      Word.remove_indexes
-    end
-
-    let(:search) do
-      criteria.text_search("phase")
-    end
-
-    it "returns all fields" do
-      expect(search.first.origin).to eq("latin")
     end
   end
 
@@ -3254,7 +3241,7 @@ describe Mongoid::Criteria do
     context "when the method exists on the class" do
 
       before do
-        Person.should_receive(:minor).and_call_original
+        expect(Person).to receive(:minor).and_call_original
       end
 
       it "calls the method on the class" do
@@ -3265,7 +3252,7 @@ describe Mongoid::Criteria do
     context "when the method exists on the criteria" do
 
       before do
-        criteria.should_receive(:to_criteria).and_call_original
+        expect(criteria).to receive(:to_criteria).and_call_original
       end
 
       it "calls the method on the criteria" do
@@ -3276,7 +3263,7 @@ describe Mongoid::Criteria do
     context "when the method exists on array" do
 
       before do
-        criteria.should_receive(:entries).and_call_original
+        expect(criteria).to receive(:entries).and_call_original
       end
 
       it "calls the method on the criteria" do
@@ -3287,7 +3274,7 @@ describe Mongoid::Criteria do
     context "when the method does not exist" do
 
       before do
-        criteria.should_receive(:entries).never
+        expect(criteria).to receive(:entries).never
       end
 
       it "raises an error" do
@@ -3332,81 +3319,27 @@ describe Mongoid::Criteria do
     end
   end
 
-  describe "#within_box" do
+  describe "#geo_spacial" do
 
-    before do
-      Bar.create_indexes
-    end
+    context "when checking within a polygon" do
 
-    let!(:match) do
-      Bar.create(location: [ 52.30, 13.25 ])
-    end
+      before do
+        Bar.create_indexes
+      end
 
-    let(:criteria) do
-      Bar.within_box(location: [[ 50, 10 ], [ 60, 20 ]])
-    end
+      let!(:match) do
+        Bar.create(location: [ 52.30, 13.25 ])
+      end
 
-    it "returns the matching documents" do
-      expect(criteria).to eq([ match ])
-    end
-  end
+      let(:criteria) do
+        Bar.geo_spacial(
+          :location.within_polygon => [[[ 50, 10 ], [ 50, 20 ], [ 60, 20 ], [ 60, 10 ], [ 50, 10 ]]]
+        )
+      end
 
-  describe "#within_circle" do
-
-    before do
-      Bar.create_indexes
-    end
-
-    let!(:match) do
-      Bar.create(location: [ 52.30, 13.25 ])
-    end
-
-    let(:criteria) do
-      Bar.within_circle(location: [[ 52, 13 ], 0.5 ])
-    end
-
-    it "returns the matching documents" do
-      expect(criteria).to eq([ match ])
-    end
-  end
-
-  describe "#within_polygon" do
-
-    before do
-      Bar.create_indexes
-    end
-
-    let!(:match) do
-      Bar.create(location: [ 52.30, 13.25 ])
-    end
-
-    let(:criteria) do
-      Bar.within_polygon(
-        location: [[ 50, 10 ], [ 50, 20 ], [ 60, 20 ], [ 60, 10 ]]
-      )
-    end
-
-    it "returns the matching documents" do
-      expect(criteria).to eq([ match ])
-    end
-  end
-
-  describe "#within_spherical_circle" do
-
-    before do
-      Bar.create_indexes
-    end
-
-    let!(:match) do
-      Bar.create(location: [ 52.30, 13.25 ])
-    end
-
-    let(:criteria) do
-      Bar.within_spherical_circle(location: [[ 52, 13 ], 0.5 ])
-    end
-
-    it "returns the matching documents" do
-      expect(criteria).to eq([ match ])
+      it "returns the matching documents" do
+        expect(criteria).to eq([ match ])
+      end
     end
   end
 
@@ -3446,6 +3379,10 @@ describe Mongoid::Criteria do
 
   describe "#without" do
 
+    let!(:person) do
+      Person.create!(username: "davinci", age: 50, pets: false)
+    end
+
     context "when omitting to embedded documents" do
 
       context "when the embedded documents are aliased" do
@@ -3457,6 +3394,23 @@ describe Mongoid::Criteria do
         it "properly uses the database field name" do
           expect(criteria.options).to eq(fields: { "mobile_phones" => 0 })
         end
+      end
+    end
+
+    context "when excluding id" do
+
+      let(:criteria) do
+        Person.without(:_id, :id, "_id", "id")
+      end
+
+      it "does not raise error" do
+        expect {
+          criteria.first.id
+        }.to_not raise_error
+      end
+
+      it "returns id anyway" do
+        expect(criteria.first.id).to_not be_nil
       end
     end
   end

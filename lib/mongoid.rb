@@ -5,6 +5,7 @@ require "delegate"
 require "time"
 require "set"
 
+require "active_support"
 require "active_support/core_ext"
 require "active_support/json"
 require "active_support/inflector"
@@ -12,14 +13,15 @@ require "active_support/time_with_zone"
 require "active_model"
 
 require "origin"
-require "moped"
+require "mongo"
 
 require "mongoid/version"
 require "mongoid/config"
 require "mongoid/loggable"
-require "mongoid/sessions"
+require "mongoid/clients"
 require "mongoid/document"
-require "mongoid/log_subscriber"
+require "mongoid/tasks/database"
+require "mongoid/query_cache"
 
 # If we are using Rails then we will include the Mongoid railtie. This has all
 # the nifty initializers that Mongoid needs.
@@ -32,15 +34,17 @@ I18n.load_path << File.join(File.dirname(__FILE__), "config", "locales", "en.yml
 
 module Mongoid
   extend Loggable
+  extend Gem::Deprecate
   extend self
 
-  MONGODB_VERSION = "2.2.0"
+  # The minimum MongoDB version supported.
+  MONGODB_VERSION = "2.4.0"
 
   # Sets the Mongoid configuration options. Best used by passing a block.
   #
   # @example Set up configuration options.
   #   Mongoid.configure do |config|
-  #     config.use(name: "mongoid_test", host: "localhost", port: 27017)
+  #     config.connect_to("mongoid_test")
   #   end
   #
   # @return [ Config ] The configuration object.
@@ -50,41 +54,47 @@ module Mongoid
     block_given? ? yield(Config) : Config
   end
 
-  # Convenience method for getting the default session.
+  # Convenience method for getting the default client.
   #
-  # @example Get the default session.
-  #   Mongoid.default_session
+  # @example Get the default client.
+  #   Mongoid.default_client
   #
-  # @return [ Moped::Session ] The default session.
+  # @return [ Mongo::Client ] The default client.
   #
   # @since 3.0.0
-  def default_session
-    Sessions.default
+  def default_client
+    Clients.default
   end
+  alias :default_session :default_client
+  deprecate :default_session, :default_client, 2015, 12
 
-  # Disconnect all active sessions.
+  # Disconnect all active clients.
   #
-  # @example Disconnect all active sessions.
-  #   Mongoid.disconnect_sessions
+  # @example Disconnect all active clients.
+  #   Mongoid.disconnect_clients
   #
   # @return [ true ] True.
   #
   # @since 3.1.0
-  def disconnect_sessions
-    Sessions.disconnect
+  def disconnect_clients
+    Clients.disconnect
   end
+  alias :disconnect_sessions :disconnect_clients
+  deprecate :disconnect_sessions, :disconnect_clients, 2015, 12
 
-  # Convenience method for getting a named session.
+  # Convenience method for getting a named client.
   #
-  # @example Get a named session.
-  #   Mongoid.session(:default)
+  # @example Get a named client.
+  #   Mongoid.client(:default)
   #
-  # @return [ Moped::Session ] The named session.
+  # @return [ Mongo::Client ] The named client.
   #
   # @since 3.0.0
-  def session(name)
-    Sessions.with_name(name)
+  def client(name)
+    Clients.with_name(name)
   end
+  alias :session :client
+  deprecate :session, :client, 2015, 12
 
   # Take all the public instance methods from the Config singleton and allow
   # them to be accessed through the Mongoid module directly.

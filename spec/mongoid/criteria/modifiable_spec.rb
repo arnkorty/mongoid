@@ -298,6 +298,157 @@ describe Mongoid::Criteria::Modifiable do
     end
   end
 
+  describe ".find_or_create_by!" do
+
+    context "when the document is found" do
+
+      context "when providing an attribute" do
+
+        let!(:person) do
+          Person.create(title: "Senior")
+        end
+
+        it "returns the document" do
+          expect(Person.find_or_create_by!(title: "Senior")).to eq(person)
+        end
+      end
+
+      context "when providing a document" do
+
+        context "with an owner with a BSON identity type" do
+
+          let!(:person) do
+            Person.create
+          end
+
+          let!(:game) do
+            Game.create(person: person)
+          end
+
+          context "when providing the object directly" do
+
+            let(:from_db) do
+              Game.find_or_create_by!(person: person)
+            end
+
+            it "returns the document" do
+              expect(from_db).to eq(game)
+            end
+          end
+
+          context "when providing the proxy relation" do
+
+            let(:from_db) do
+              Game.find_or_create_by!(person: game.person)
+            end
+
+            it "returns the document" do
+              expect(from_db).to eq(game)
+            end
+          end
+        end
+
+        context "with an owner with an Integer identity type" do
+
+          let!(:jar) do
+            Jar.create
+          end
+
+          let!(:cookie) do
+            Cookie.create(jar: jar)
+          end
+
+          let(:from_db) do
+            Cookie.find_or_create_by!(jar: jar)
+          end
+
+          it "returns the document" do
+            expect(from_db).to eq(cookie)
+          end
+        end
+      end
+    end
+
+    context "when the document is not found" do
+
+      context "when providing a document" do
+
+        let!(:person) do
+          Person.create
+        end
+
+        let!(:game) do
+          Game.create
+        end
+
+        let(:from_db) do
+          Game.find_or_create_by!(person: person)
+        end
+
+        it "returns the new document" do
+          expect(from_db.person).to eq(person)
+        end
+
+        it "does not return an existing false document" do
+          expect(from_db).to_not eq(game)
+        end
+      end
+
+      context "when not providing a block" do
+
+        let!(:person) do
+          Person.find_or_create_by!(title: "Senorita")
+        end
+
+        it "creates a persisted document" do
+          expect(person).to be_persisted
+        end
+
+        it "sets the attributes" do
+          expect(person.title).to eq("Senorita")
+        end
+      end
+
+      context "when validation fails" do
+
+        before do
+          Person.validates_presence_of(:title)
+        end
+
+        after do
+          Person.reset_callbacks(:validate)
+        end
+
+        it "raises an exception" do
+          expect {
+            Person.find_or_create_by!(ssn: "test")
+          }.to raise_error(Mongoid::Errors::Validations)
+        end
+      end
+
+      context "when providing a block" do
+
+        let!(:person) do
+          Person.find_or_create_by!(title: "Senorita") do |person|
+            person.pets = true
+          end
+        end
+
+        it "creates a persisted document" do
+          expect(person).to be_persisted
+        end
+
+        it "sets the attributes" do
+          expect(person.title).to eq("Senorita")
+        end
+
+        it "calls the block" do
+          expect(person.pets).to be true
+        end
+      end
+    end
+  end
+
   describe ".find_or_initialize_by" do
 
     context "when the document is found" do
@@ -397,6 +548,25 @@ describe Mongoid::Criteria::Modifiable do
 
         it "returns a new document" do
           expect(document.name).to eq("Tool")
+        end
+
+        it "returns a persisted document" do
+          expect(document).to be_persisted
+        end
+      end
+
+      context "when the criteria is on an embedded relation" do
+
+        let!(:band) do
+          Band.create(name: "Placebo")
+        end
+
+        let(:document) do
+          band.notes.permanent.first_or_create(text: "test")
+        end
+
+        it "returns a new document" do
+          expect(document.text).to eq("test")
         end
 
         it "returns a persisted document" do
@@ -764,12 +934,9 @@ describe Mongoid::Criteria::Modifiable do
 
       context "when the relation is a references many" do
 
-        let!(:post_one) do
-          person.posts.create(title: "First")
-        end
-
-        let!(:post_two) do
-          person.posts.create(title: "Second")
+        before do
+          person.posts.create!(title: "First")
+          person.posts.create!(title: "Second")
         end
 
         context "when updating the relation directly" do
@@ -778,16 +945,16 @@ describe Mongoid::Criteria::Modifiable do
             person.posts.update(title: "London")
           end
 
-          let!(:from_db) do
+          let(:from_db) do
             Person.first
           end
 
           it "updates the first document" do
-            expect(from_db.posts.first.title).to eq("London")
+            expect(from_db.posts.map(&:title)).to eq(["London", "Second"])
           end
 
           it "does not update the last document" do
-            expect(from_db.posts.last.title).to eq("Second")
+            expect(from_db.posts[1].title).to eq("Second")
           end
         end
 
@@ -832,11 +999,11 @@ describe Mongoid::Criteria::Modifiable do
           end
 
           it "updates the first document" do
-            expect(from_db.preferences.first.name).to eq("London")
+            expect(from_db.preferences[0].name).to eq("London")
           end
 
           it "does not update the last document" do
-            expect(from_db.preferences.last.name).to eq("Second")
+            expect(from_db.preferences[1].name).to eq("Second")
           end
         end
 
@@ -847,11 +1014,11 @@ describe Mongoid::Criteria::Modifiable do
           end
 
           it "updates the matching documents" do
-            expect(from_db.preferences.first.name).to eq("Berlin")
+            expect(from_db.preferences[0].name).to eq("Berlin")
           end
 
           it "does not update non matching documents" do
-            expect(from_db.preferences.last.name).to eq("Second")
+            expect(from_db.preferences[1].name).to eq("Second")
           end
         end
       end
@@ -1050,11 +1217,11 @@ describe Mongoid::Criteria::Modifiable do
           end
 
           it "updates the matching documents" do
-            expect(from_db.preferences.first.name).to eq("Berlin")
+            expect(from_db.preferences[0].name).to eq("Berlin")
           end
 
           it "does not update non matching documents" do
-            expect(from_db.preferences.last.name).to eq("Second")
+            expect(from_db.preferences[1].name).to eq("Second")
           end
         end
       end
